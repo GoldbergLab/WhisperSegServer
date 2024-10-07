@@ -1,5 +1,4 @@
 import os,sys,inspect
-script_dirname = os.path.dirname(os.path.abspath(__file__))
 from tqdm import tqdm
 import shutil
 import numpy as np
@@ -15,9 +14,7 @@ from audio_utils import SpecViewer, WhisperSegFeatureExtractor
 from utils import *
 from model import *
 from datautils import *
-from evaluate import evaluate
 import subprocess
-import json
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 
@@ -44,7 +41,55 @@ def train_iteration(batch):
     """
     return loss.item()
 
+def evaluate( audio_list, label_list, segmenter, batch_size, max_length, num_trials, consolidation_method = "clustering", num_beams=4, target_cluster = None ):
 
+    total_n_true_positive_segment_wise, total_n_positive_in_prediction_segment_wise, total_n_positive_in_label_segment_wise = 0,0,0
+    total_n_true_positive_frame_wise, total_n_positive_in_prediction_frame_wise, total_n_positive_in_label_frame_wise = 0,0,0
+    
+    for audio, label in tqdm(zip(audio_list, label_list), total = len(audio_list)):        
+        prediction = segmenter.segment(  audio, sr = label["sr"],
+                       min_frequency = label["min_frequency"],
+                       spec_time_step = label["spec_time_step"],
+                       min_segment_length = label["min_segment_length"],
+                       eps = label["eps"],  ## for DBSCAN clustering
+                       time_per_frame_for_voting = label.get("time_per_frame_for_voting", 0.001), ## for bin-wise voting, by default it is not used
+                       consolidation_method = consolidation_method,
+                       max_length = max_length, 
+                       batch_size = batch_size, 
+                       num_trials = num_trials,
+                       num_beams = num_beams
+                 )
+
+        
+        TP, P_pred, P_label = segmenter.segment_score( prediction, label,  target_cluster = target_cluster, tolerance = label["tolerance"] )[:3]
+        total_n_true_positive_segment_wise += TP
+        total_n_positive_in_prediction_segment_wise += P_pred
+        total_n_positive_in_label_segment_wise += P_label
+        
+        
+        TP, P_pred, P_label = segmenter.frame_score( prediction, label,  target_cluster = target_cluster, 
+                                                     time_per_frame_for_scoring = label["time_per_frame_for_scoring"] )[:3]
+        
+        total_n_true_positive_frame_wise += TP
+        total_n_positive_in_prediction_frame_wise += P_pred
+        total_n_positive_in_label_frame_wise += P_label
+        
+    res = {}
+    
+    precision = total_n_true_positive_segment_wise / max(total_n_positive_in_prediction_segment_wise, 1e-12)
+    recall = total_n_true_positive_segment_wise / max( total_n_positive_in_label_segment_wise, 1e-12 )
+    f1 = 2/(1/max(precision, 1e-12) + 1/max(recall, 1e-12)  )
+    
+    res["segment_wise"] = [ total_n_true_positive_segment_wise, total_n_positive_in_prediction_segment_wise, total_n_positive_in_label_segment_wise, precision, recall, f1 ]
+    
+    
+    precision = total_n_true_positive_frame_wise / max(total_n_positive_in_prediction_frame_wise, 1e-12)
+    recall = total_n_true_positive_frame_wise / max( total_n_positive_in_label_frame_wise, 1e-12 )
+    f1 = 2/(1/max(precision, 1e-12) + 1/max(recall, 1e-12)  )
+    
+    res["frame_wise"] = [ total_n_true_positive_frame_wise, total_n_positive_in_prediction_frame_wise, total_n_positive_in_label_frame_wise, precision, recall, f1 ]
+    
+    return res
 
 if __name__ == "__main__":
     
@@ -55,7 +100,6 @@ if __name__ == "__main__":
     parser.add_argument("--train_dataset_folder" )
     parser.add_argument("--n_device", type = int, default = 1 )
     parser.add_argument("--gpu_list", type = int, nargs = "+", default = None )
-    parser.add_argument("--use_wandb", type = int, default = 0 )
     parser.add_argument("--project", default = "whisperseg-multi-species" )
     parser.add_argument("--run_name", default = None )
     parser.add_argument("--print_every", type = int, default = 100 )
@@ -65,7 +109,6 @@ if __name__ == "__main__":
     parser.add_argument("--save_per_epoch", type = int, default = 0 )
     parser.add_argument("--max_num_epochs", type = int, default = 3 )
     parser.add_argument("--max_num_iterations", type = int, default = None )
-    parser.add_argument("--min_num_iterations", type = int, default = 500 )
     parser.add_argument("--val_ratio", type = float, default = 0.0 )
     
     parser.add_argument("--max_length", type = int, default = 100 )
@@ -80,20 +123,18 @@ if __name__ == "__main__":
     parser.add_argument("--freeze_encoder", type = int, default = 0 )
     parser.add_argument("--dropout", type = float, default = 0.0 )
     parser.add_argument("--num_workers", type = int, default = 4 )
-    
-    parser.add_argument("--clear_cluster_codebook", type = int, help="set the pretrained model's cluster_codebook to empty dict. This is used when we train the segmenter on a complete new dataset. Set this to 0 if you just want to slighlt finetune the model with some additional data with the same cluster naming rule.", default = 1 )
+    parser.add_argument("--clear_cluster_codebook", type = int, help="set the pretrained model's cluster_codebook to empty dict. This is used when we train the segmenter on a complete new dataset. Set this to 0 if you just want to slighlt finetune the model with some additional data with the same cluster naming rule.", default = 0 )
     
     args = parser.parse_args()
 
-    if args.use_wandb:
-        wandb.init( project = args.project, name = args.run_name )
-        wandb.define_metric("current_step")
-        wandb.define_metric( "epoch", step_metric="current_step")
-        wandb.define_metric( "train/loss", step_metric="current_step")
-        wandb.define_metric( "train/learning_rate", step_metric="current_step")
-        wandb.define_metric( "validate/score", step_metric="current_step")
-        wandb.define_metric( "validate/segment_score", step_metric="current_step")
-        wandb.define_metric( "validate/frame_score", step_metric="current_step")
+    wandb.init( project = args.project, name = args.run_name )
+    wandb.define_metric("current_step")
+    wandb.define_metric( "epoch", step_metric="current_step")
+    wandb.define_metric( "train/loss", step_metric="current_step")
+    wandb.define_metric( "train/learning_rate", step_metric="current_step")
+    wandb.define_metric( "validate/score", step_metric="current_step")
+    wandb.define_metric( "validate/segment_score", step_metric="current_step")
+    wandb.define_metric( "validate/frame_score", step_metric="current_step")
 
     if args.seed is not None:
         np.random.seed(args.seed)  
@@ -136,17 +177,12 @@ if __name__ == "__main__":
 
     scaler = torch.cuda.amp.GradScaler()
 
-    audio_path_list_train, label_path_list_train = get_audio_and_label_paths( args.train_dataset_folder ) 
+    audio_path_list_train, label_path_list_train = get_audio_and_label_paths( args.train_dataset_folder )  
 
-    default_config = determine_default_config(audio_path_list_train, label_path_list_train, args.total_spec_columns)
-    ## store the default segmentation config
-    segmenter.model.config.default_segmentation_config = default_config
-    segmenter.default_segmentation_config = default_config
-    
     cluster_codebook = get_cluster_codebook( label_path_list_train, segmenter.cluster_codebook )
     segmenter.update_cluster_codebook( cluster_codebook )
-    
-    audio_list_train, label_list_train = load_data(audio_path_list_train, label_path_list_train, cluster_codebook = cluster_codebook, n_threads = 20, default_config = default_config )
+
+    audio_list_train, label_list_train = load_data(audio_path_list_train, label_path_list_train, cluster_codebook = cluster_codebook, n_threads = 20 )
 
     if args.val_ratio > 0:
         (audio_list_train, label_list_train), ( audio_list_val, label_list_val ) = train_val_split( audio_list_train, label_list_train, args.val_ratio )
@@ -159,32 +195,20 @@ if __name__ == "__main__":
     training_dataloader = DataLoader( training_dataset, batch_size = args.batch_size , shuffle = True , 
                                              worker_init_fn = lambda x:[np.random.seed( epoch  + x ),  
                                                                     torch.manual_seed( epoch + x) ], 
-                                             num_workers = args.num_workers, 
-                                             drop_last= True, 
+                                             num_workers = args.num_workers , drop_last= True,
                                              pin_memory = False
                                            )
-    if len(training_dataloader) == 0:
-        training_dataloader = DataLoader( training_dataset, batch_size = args.batch_size , shuffle = True , 
-                                             worker_init_fn = lambda x:[np.random.seed( epoch  + x ),  
-                                                                    torch.manual_seed( epoch + x) ], 
-                                             num_workers = args.num_workers, 
-                                             drop_last= False,  ## set drop_last to False to fully utilize small dataset
-                                             pin_memory = False
-                                           )
-    ## if the training dataset is really too small, then trigger the error
+
     if len(training_dataloader) == 0:
         print("Error: Too few examples (less than a batch) for training! Exit!")
         sys.exit(1)
     
-    if args.max_num_iterations is not None and args.max_num_iterations > 0:            
+
+    if args.max_num_iterations is not None and args.max_num_iterations > 0:
         args.max_num_epochs = int(np.ceil( args.max_num_iterations / len( training_dataloader )  ))
     else:
         assert args.max_num_epochs is not None and args.max_num_epochs > 0
         args.max_num_iterations = len( training_dataloader ) * args.max_num_epochs
-        
-        if args.min_num_iterations is not None:
-            args.max_num_iterations = max( args.max_num_iterations, args.min_num_iterations )
-            args.max_num_epochs = int(np.ceil( args.max_num_iterations / len( training_dataloader )  ))
                 
     if args.lr_schedule == "linear":
         scheduler = get_linear_schedule_with_warmup(
@@ -200,10 +224,6 @@ if __name__ == "__main__":
     eary_stop = False
     current_step = 0
 
-    progress = 0
-    eta = None
-    start_time = time.time()
-    
     for epoch in range(args.max_num_epochs + 1):  # This +1 is to ensure current_step can reach args.max_num_iterations
         for count, batch in enumerate( tqdm( training_dataloader ) ):
             training_loss_value_list.append( train_iteration(batch) )
@@ -213,30 +233,16 @@ if __name__ == "__main__":
                 
             current_step += 1
 
-            current_time = time.time()
-            current_progress = int(np.round(current_step / args.max_num_iterations * 100))
-            eta = int((current_time - start_time) / ( current_step / args.max_num_iterations ) * ( 1 - current_step / args.max_num_iterations ))
-            eta_hours = eta // 3600
-            eta_minutes = (eta % 3600) // 60
-            eta_seconds = ( eta % 3600 ) % 60
-            if current_progress > progress:
-                json.dump( { "progress":current_progress,
-                             "eta": "%02d:%02d:%02d"%( eta_hours, eta_minutes, eta_seconds )
-                           }, open( args.model_folder + "/status.json", "w" ) )
-            progress = current_progress
-
-            
             if current_step % args.print_every == 0:
                 print("Epoch: %d, current_step: %d, learning rate: %f, Loss: %.4f"%( epoch, current_step, get_lr(optimizer)[0], np.mean(training_loss_value_list)) )
-                if args.use_wandb:
-                    wandb.log(
-                        {
-                            "current_step":current_step,
-                            "train/learning_rate":get_lr(optimizer)[0],
-                            "train/loss":np.mean(training_loss_value_list),
-                            "epoch": epoch + count / len(training_dataloader)
-                        }
-                    )
+                wandb.log(
+                    {
+                        "current_step":current_step,
+                        "train/learning_rate":get_lr(optimizer)[0],
+                        "train/loss":np.mean(training_loss_value_list),
+                        "epoch": epoch + count / len(training_dataloader)
+                    }
+                )
                 
                 training_loss_value_list = [] 
 
@@ -245,19 +251,18 @@ if __name__ == "__main__":
                 print("Start validation ...")
                 model.eval()
                 ## in the validation set, set the num_trails to 1
-                eval_res = evaluate( audio_list_val, label_list_val, segmenter, args.batch_size, args.max_length, num_trials =1, num_beams=1, target_cluster = None )
+                eval_res = evaluate( audio_list_val, label_list_val, segmenter, args.batch_size, args.max_length, num_trials =1, consolidation_method = None, num_beams=1, target_cluster = None )
          
                 print("Epoch: %d, current_step: %d, validation segment F1 score: %.2f, frame F1 score: %.2f"%( epoch, current_step, 
                                                                       eval_res["segment_wise"][-1], eval_res["frame_wise"][-1] ))
-                if args.use_wandb:
-                    wandb.log(
-                        {
-                            "current_step":current_step,
-                            "validate/score": ( eval_res["segment_wise"][-1] + eval_res["frame_wise"][-1] ) * 0.5,
-                            "validate/segment_score": eval_res["segment_wise"][-1],
-                            "validate/frame_score": eval_res["frame_wise"][-1]
-                        }
-                    )    
+                wandb.log(
+                    {
+                        "current_step":current_step,
+                        "validate/score": ( eval_res["segment_wise"][-1] + eval_res["frame_wise"][-1] ) * 0.5,
+                        "validate/segment_score": eval_res["segment_wise"][-1],
+                        "validate/frame_score": eval_res["frame_wise"][-1]
+                    }
+                )    
                 val_score_history.append( ( current_step, ( eval_res["segment_wise"][-1] + eval_res["frame_wise"][-1] ) * 0.5 ) )
                 
                 model.train()
@@ -284,15 +289,11 @@ if __name__ == "__main__":
         if current_step >= args.max_num_iterations or eary_stop :
             break   
 
-    json.dump( { "progress":100,
-                 "eta": "%02d:%02d:%02d"%( 0, 0, 0 )
-               }, open( args.model_folder + "/status.json", "w" ) )
-
     best_checkpoint_batch_number = None
     if len(val_score_history) > 0:
         best_checkpoint_batch_number = sorted( val_score_history, key = lambda x:-x[1] )[0][0]
     else:
-        ckpt_list = glob( args.model_folder + "/checkpoint-*" )
+        ckpt_list = glob( args.model_folder + "/*" )
         if len( ckpt_list ) >0:
             ckpt_list.sort( key = os.path.getmtime )
             ckpt_name = ckpt_list[-1]
@@ -308,15 +309,11 @@ if __name__ == "__main__":
         hf_model_folder = args.model_folder+"/final_checkpoint"
         ct2_model_folder = hf_model_folder + "_ct2"
         
-        subprocess.run([ "python", os.path.join( script_dirname, "convert_hf_to_ct2.py" ), 
+        subprocess.run([ "python", "convert_hf_to_ct2.py", 
                          "--model", hf_model_folder,
                          "--output_dir", ct2_model_folder,
-                         "--quantization", "int8_float16"
-                       ])
-    try:
-        os.remove( args.model_folder + "/status.json" )
-    except:
-        pass
+                         "--quantization", "float16"
+                       ])    
     
     print("All Done!")    
 

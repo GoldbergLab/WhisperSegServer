@@ -1,0 +1,72 @@
+
+CondaError: Run 'conda init' before 'conda activate'
+
+Traceback (most recent call last):
+  File "/home/glab/Code/WhisperSeg/electro_gui_segment_service.py", line 150, in <module>
+    segmenter = WhisperSegmenterFast( args.model_path, device = args.device, device_ids = args.device_ids )
+  File "/home/glab/Code/WhisperSeg/model.py", line 631, in __init__
+    model_path = download_model( model_path, ignore_cache = False )
+  File "/home/glab/Code/WhisperSeg/model.py", line 33, in download_model
+    if os.path.exists( model_path ):
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/genericpath.py", line 19, in exists
+    os.stat(path)
+TypeError: stat: path should be string, bytes, os.PathLike or integer, not NoneType
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/utils/_errors.py", line 286, in hf_raise_for_status
+    response.raise_for_status()
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/requests/models.py", line 1021, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://huggingface.co/None/resolve/main/config.json
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/transformers/utils/hub.py", line 417, in cached_file
+    resolved_file = hf_hub_download(
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 118, in _inner_fn
+    return fn(*args, **kwargs)
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/file_download.py", line 1368, in hf_hub_download
+    raise head_call_error
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/file_download.py", line 1238, in hf_hub_download
+    metadata = get_hf_file_metadata(
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 118, in _inner_fn
+    return fn(*args, **kwargs)
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/file_download.py", line 1631, in get_hf_file_metadata
+    r = _request_wrapper(
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/file_download.py", line 385, in _request_wrapper
+    response = _request_wrapper(
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/file_download.py", line 409, in _request_wrapper
+    hf_raise_for_status(response)
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/huggingface_hub/utils/_errors.py", line 323, in hf_raise_for_status
+    raise RepositoryNotFoundError(message, response) from e
+huggingface_hub.utils._errors.RepositoryNotFoundError: 401 Client Error. (Request ID: Root=1-663e8d42-0383d27c69bec310493bbb5d;1ae4ecad-6af8-48f3-a32b-9a9c4de91377)
+
+Repository Not Found for url: https://huggingface.co/None/resolve/main/config.json.
+Please make sure you specified the correct `repo_id` and `repo_type`.
+If you are trying to access a private or gated repo, make sure you are authenticated.
+Invalid username or password.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/glab/Code/WhisperSeg/electro_gui_segment_service.py", line 153, in <module>
+    segmenter = WhisperSegmenter( args.model_path, device = args.device, device_ids = args.device_ids )
+  File "/home/glab/Code/WhisperSeg/model.py", line 586, in __init__
+    self.model_list = [ WhisperForConditionalGeneration.from_pretrained( model_path ).to(device) for device in self.device_list ]
+  File "/home/glab/Code/WhisperSeg/model.py", line 586, in <listcomp>
+    self.model_list = [ WhisperForConditionalGeneration.from_pretrained( model_path ).to(device) for device in self.device_list ]
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/transformers/modeling_utils.py", line 2325, in from_pretrained
+    config, model_kwargs = cls.config_class.from_pretrained(
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/transformers/configuration_utils.py", line 590, in from_pretrained
+    config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/transformers/configuration_utils.py", line 617, in get_config_dict
+    config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/transformers/configuration_utils.py", line 672, in _get_config_dict
+    resolved_config_file = cached_file(
+  File "/home/glab/anaconda3/envs/wseg/lib/python3.10/site-packages/transformers/utils/hub.py", line 433, in cached_file
+    raise EnvironmentError(
+OSError: None is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo with `use_auth_token` or log in with `huggingface-cli login` and pass `use_auth_token=True`.

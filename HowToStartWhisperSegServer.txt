@@ -1,0 +1,4 @@
+How to start whisper seg server:
+
+conda activate wseg
+python electro_gui_segment_service.py --model_path /home/glab/Downloads/final_checkpoint_ct2
