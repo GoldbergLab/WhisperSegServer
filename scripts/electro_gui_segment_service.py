@@ -11,7 +11,7 @@ from model import WhisperSegmenter, WhisperSegmenterFast
 import numpy as np
 # from tqdm import tqdm
 from pathlib import Path
-# import time
+import datetime as dt
 
 import multiprocessing as mp
 import base64
@@ -53,6 +53,12 @@ def bytes_to_base64_string(f_bytes):
 def base64_string_to_bytes(base64_string):
     return base64.b64decode(base64_string)
 
+@app.route('/models', methods=['GET', 'POST'])
+def list_models():
+    global model_names, model_times
+    response = {'model_names':model_names, 'model_timestamps':model_times}
+    return jsonify(response), 201
+
 @app.route('/segment/<model_name>', methods=['POST'])
 def dispatch_segmenter(model_name):
     print('Got request for worker {name}'.format(name=model_name))
@@ -61,6 +67,7 @@ def dispatch_segmenter(model_name):
         prediction = make_empty_prediction()
         prediction['message'] = "Error: no segmentation worker found for the name '{name}'".format(name=model_name)
     else:
+        request_info = request.json
         worker = workers[model_name]
         worker.request_queue.put(request_info, block=True)
         print('Sent job to worker')
@@ -95,25 +102,24 @@ class Segmenter(mp.Process):
         self.batch_size = batch_size
         self.request_queue = mp.Queue()
         self.prediction_queue = mp.Queue()
-
-        try:
-            self.segmenter = WhisperSegmenterFast(model_path, device = device, device_ids = device_ids)
-            print("The loaded model is the Ctranslated version.")
-        except:
-            self.segmenter = WhisperSegmenter(model_path, device = device, device_ids = device_ids)
-            print("The loaded model is the original huggingface version.")
+        self.segmenter = None
 
     def run(self):
+        try:
+            self.segmenter = WhisperSegmenterFast(self.model_path, device=self.device, device_ids=self.device_ids)
+            print("The loaded model is the Ctranslated version.")
+        except:
+            self.segmenter = WhisperSegmenter(self.model_path, device=self.device, device_ids=self.device_ids)
+            print("The loaded model is the original huggingface version.")
+
         while True:
             request_info = self.request_queue.get(block=True)
-            if requet_info == Segmenter.EXIT_CODE:
+            if request_info == Segmenter.EXIT_CODE:
                 break
             prediction = self.segment(request_info)
 
-
     def segment(self, request_info):
         try:
-            request_info = request.json
             audio_file_base64_string = request_info["audio_file_base64_string"]
             ### drop all the key-value pairs whose value is None, since we will determine the default value within this function.
             request_info = { k:v for k,v in request_info.items() if v is not None}
@@ -165,7 +171,7 @@ class Segmenter(mp.Process):
                 min_segment_length = min_segment_length,
                 eps = eps,
                 num_trials = num_trials,
-                batch_size = batch_size
+                batch_size = self.batch_size
                 )
             prediction["message"] = 'Success'
         except:
@@ -194,7 +200,6 @@ class Segmenter(mp.Process):
 
         self.prediction_queue.put(prediction)
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--flask_port", help="The port of the flask app.", default=8050, type=int)
@@ -207,7 +212,18 @@ if __name__ == '__main__':
 
     # Find available networks
     model_root = Path(args.model_root_path)
-    model_paths = [f for f in model_root.iterdir() if f.is_dir()]
+    model_paths = [f.resolve() for f in model_root.iterdir() if f.is_dir()]
+    model_names = [p.stem for p in model_paths]
+    model_times = [str(dt.datetime.fromtimestamp(p.stat().st_mtime)) for p in model_paths]
+
+    print('model_root:')
+    print(model_root)
+    print('model_paths:')
+    print(model_paths)
+    print('model_names:')
+    print(model_names)
+    print('model_times:')
+    print(model_times)
 
     with open(args.config_file_path, "r") as config_file:
         segment_config = json.load(config_file)
@@ -217,7 +233,7 @@ if __name__ == '__main__':
     for model_path in model_paths:
         print('Starting worker for:', model_path)
         model_name = model_path.stem
-        workers[model_name] = Segmenter(model_name, model_path, args.device, args.device_ids, args.batch_size, segment_config)
+        workers[model_name] = Segmenter(model_name, str(model_path), args.device, args.device_ids, args.batch_size, segment_config)
         workers[model_name].start()
 
     print("Waiting for requests...")
