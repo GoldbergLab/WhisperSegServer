@@ -62,20 +62,44 @@ def base64_string_to_bytes(base64_string):
 
 @app.route('/models', methods=['POST'])
 def list_models_handler():
+    """Request handler for list_models.
+
+    Returns:
+        str: Response to query
+
+    """
     response =  list_models()
     return jsonify(response), 201
 
 def list_models():
+    """Send client a list of available trained models.
+
+    Returns:
+        dict: List of trained models
+
+    """
     global model_names, model_times
     response = {'model_names':model_names, 'model_timestamps':model_times}
     return response
 
 @app.route('/update', methods=['POST'])
 def update_models_handler():
+    """Request handler for update_models.
+
+    Returns:
+        str: Response to query
+
+    """
     response = update_models()
     return jsonify(response), 201
 
 def update_models():
+    """Search for new models in the root directory and load them.
+
+    Returns:
+        dict: Predicted segmentation and labeling response
+
+    """
     global model_paths, model_names, model_times, workers, model_root_path
 
     # Reload config
@@ -106,6 +130,15 @@ def update_models():
 
 @app.route('/segment/<model_name>', methods=['POST'])
 def dispatch_segmenter(model_name):
+    """Send the audio data to thre requested worker for segmentation.
+
+    Args:
+        model_name (str): Name of the trained model to use
+
+    Returns:
+        str: Segmentation and labeling prediction
+
+    """
     print('Got request for worker {name}'.format(name=model_name))
     if model_name not in workers:
         print('No worker found')
@@ -135,6 +168,29 @@ def make_empty_prediction():
     return prediction
 
 class Segmenter(mp.Process):
+    """Worker class for segmenting and labeling audio.
+
+    Args:
+        model_name (str): Name of the trained model to use
+        model_path (str or Path): Path to the trained model
+        device (str): Type of compute device to use to run model
+        device_ids (list of int): GPU devices IDs available
+        batch_size (int): ?
+        segment_config (dict): Loaded version of config.json for model
+
+    Attributes:
+        request_queue (mp.Queue): A queue for receiving requests from client
+        prediction_queue (mp.Queue): A queue for sending predictions back to the
+            client
+        segmenter (?): Loaded segmenter model object
+        model_name
+        model_path
+        device
+        device_ids
+        segment_config
+        batch_size
+
+    """
     EXIT_CODE='exit'
     def __init__(self, model_name, model_path, device, device_ids, batch_size, segment_config):
         mp.Process.__init__(self, daemon=True)
@@ -150,6 +206,14 @@ class Segmenter(mp.Process):
         self.segmenter = None
 
     def run(self):
+        """Main run loop for segmentation workers
+
+        Returns:
+            None
+
+        """
+
+        # Initialize trained model
         try:
             self.segmenter = WhisperSegmenterFast(self.model_path, device=self.device, device_ids=self.device_ids)
             print("The loaded model is the Ctranslated version.")
@@ -158,12 +222,28 @@ class Segmenter(mp.Process):
             print("The loaded model is the original huggingface version.")
 
         while True:
+            # Wait for a request from the client
             request_info = self.request_queue.get(block=True)
             if request_info == Segmenter.EXIT_CODE:
+                # Got an exit code
                 break
+            # Segment the provided audio data, and return it
             prediction = self.segment(request_info)
+            # Send the predicted segmentation and labels through a queue to be
+            #   returned to the client
+            self.prediction_queue.put(prediction)
 
     def segment(self, request_info):
+        """Method to segment the provided audio.
+
+        Args:
+            request_info (dict): A dictionary of POST request info from the
+                client.
+
+        Returns:
+            None (return data is put into a multiprocessing queue)
+
+        """
         try:
             audio_file_base64_string = request_info["audio_file_base64_string"]
             ### drop all the key-value pairs whose value is None, since we will determine the default value within this function.
@@ -243,9 +323,20 @@ class Segmenter(mp.Process):
                 "Description":Description_list
             }
 
-        self.prediction_queue.put(prediction)
+        return prediction
 
 def find_models(model_root_path):
+    """Find available networks in the given root path
+
+    Args:
+        model_root_path (str or Path): Root path in which to look for trained
+            model subdirectories
+
+    Returns:
+        Paths, strs, strs: A list of discovered trained model paths, and
+            corresponding lists of model names and creation timestamps
+
+    """
     # Find available networks
     model_root = Path(model_root_path)
     model_paths = [f.resolve() for f in model_root.iterdir() if f.is_dir()]
@@ -254,6 +345,20 @@ def find_models(model_root_path):
     return model_paths, model_names, model_times
 
 def create_worker(model_name, model_path, device, device_ids, batch_size, segment_config):
+    """Create and start a segmentation worker process.
+
+    Args:
+        model_name (str): name of a trained model to use
+        model_path (str or Path): path to the trained model to use.
+        device (?): GPU index I think?
+        device_ids (?): List of GPUs maybe?.
+        batch_size (int): ?
+        segment_config (dict): Loaded version of config.json file to use.
+
+    Returns:
+        mp.Process: Process object representing the worker process
+
+    """
     print('Starting worker for:', model_path)
     worker = Segmenter(model_name, str(model_path), device, device_ids, batch_size, segment_config)
     worker.start()
@@ -274,6 +379,7 @@ def print_models():
     print(model_times)
 
 if __name__ == '__main__':
+    # Get startup arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--flask_port", help="The port of the flask app.", default=8050, type=int)
     parser.add_argument("--model_root_path")
@@ -288,11 +394,8 @@ if __name__ == '__main__':
     device_ids = args.device_ids
     batch_size = args.batch_size
 
-    print('before')
-    print(model_paths)
+    # Start workers for all the available trained models
     update_models()
-    print('after')
-    print(model_paths)
 
     print("Waiting for requests...")
 
