@@ -111,12 +111,17 @@ def update_models():
     # For any networks that aren't already assigned to a worker, assign one
     addedNetworks = 0
     errors = 0
+    errorMessages = []
     for model_path, model_name, model_time in zip(updated_model_paths, updated_model_names, updated_model_times):
         if model_path not in model_paths      \
             or model_name not in model_names  \
             or model_time not in model_times:
-            workers[model_name] = create_worker(model_name, model_path, device, device_ids, batch_size, segment_config)
-            addedNetworks += 1
+            try:
+                workers[model_name] = create_worker(model_name, model_path, device, device_ids, batch_size, segment_config)
+                addedNetworks += 1
+            except:
+                errors += 1
+                errorMessages.append(traceback.format_exc())
 
     # Update global list of loaded models
     model_names = updated_model_names
@@ -124,9 +129,12 @@ def update_models():
     model_paths = updated_model_paths
 
     if addedNetworks == 0:
-        response = 'No updated models found'
+        response = 'No updated models added'
     else:
         response = 'Updated models - added {n} new workers.'.format(n=addedNetworks)
+
+    if errors > 0:
+        response = response + '\nErrors:\n' + ', '.join(errorMessages)
     return response
 
 @app.route('/segment/<model_name>', methods=['POST'])
@@ -205,6 +213,7 @@ class Segmenter(mp.Process):
         self.request_queue = mp.Queue()
         self.prediction_queue = mp.Queue()
         self.segmenter = None
+        self.name = 'Segmentation worker for model {model_name}'.format(model_name=self.model_name)
 
     def run(self):
         """Main run loop for segmentation workers
