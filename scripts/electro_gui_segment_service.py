@@ -110,6 +110,7 @@ def update_models():
 
     # For any networks that aren't already assigned to a worker, assign one
     addedNetworks = 0
+    errors = 0
     for model_path, model_name, model_time in zip(updated_model_paths, updated_model_names, updated_model_times):
         if model_path not in model_paths      \
             or model_name not in model_names  \
@@ -379,6 +380,13 @@ def print_models():
     print(model_times)
 
 if __name__ == '__main__':
+
+    try:
+        mp.set_start_method('spawn', force=True)
+    except:
+        print('Unable to set process start method to spawn')
+        pass
+
     # Get startup arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--flask_port", help="The port of the flask app.", default=8050, type=int)
