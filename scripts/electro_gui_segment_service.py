@@ -329,8 +329,8 @@ class Segmenter(mp.Process):
             if sr != sr_native:
                 # Re-scale times to match original timebase before resampling
                 ratio = sr_native / sr
-                prediction['onset'] = [onset * ratio for onset in prediction['onset']]
-                prediction['offset'] *= [offset * ratio for offset in prediction['offset']]
+                prediction['onset'] =  [onset  * ratio for onset  in prediction['onset']]
+                prediction['offset'] = [offset * ratio for offset in prediction['offset']]
 
         except:
             message = "Segmentation Error! Returning an empty prediction ...\n" + traceback.format_exc()
