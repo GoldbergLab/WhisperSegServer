@@ -297,7 +297,7 @@ class Segmenter(mp.Process):
             if sr != sr_native:
                 print('Resampling audio from {sr1} to {sr2}'.format(sr1=sr_native, sr2=sr))
                 # Resample audio if the native sampling rate is not the same as the model's expected sampling rate
-                audio = librosa.resample(audio, orig_sr=sr_native, target_sr=sr, res_type="soxr_hq")
+                audio = librosa.resample(audio, orig_sr=sr_native, target_sr=sr)
 
     #        audio, _ = librosa.load( io.BytesIO(base64_string_to_bytes(audio_file_base64_string)),
     #                                 sr = sr, mono=False )
@@ -328,8 +328,9 @@ class Segmenter(mp.Process):
 
             if sr != sr_native:
                 # Re-scale times to match original timebase before resampling
-                prediction['onset'] *= sr_native / sr
-                prediction['offset'] *= sr_native / sr
+                ratio = sr_native / sr
+                prediction['onset'] = [onset * ratio for onset in prediction['onset']]
+                prediction['offset'] *= [offset * ratio for offset in prediction['offset']]
 
         except:
             message = "Segmentation Error! Returning an empty prediction ...\n" + traceback.format_exc()
