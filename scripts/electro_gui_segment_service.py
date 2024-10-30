@@ -19,8 +19,6 @@ import io
 import traceback
 import queue
 
-from copy import copy
-
 model_paths = []
 model_names = []
 model_times = []
@@ -242,10 +240,6 @@ class Segmenter(mp.Process):
             # Segment the provided audio data, and return it
             print('SEGMENTING:')
             print('Model path:', self.model_path)
-            printable_info = copy(request_info)
-            printable_info['audio_file_base64_string'] = '...'
-            print('request_info:')
-            print(printable_info)
             prediction = self.segment(request_info)
             # Send the predicted segmentation and labels through a queue to be
             #   returned to the client
@@ -271,6 +265,7 @@ class Segmenter(mp.Process):
                 print('Using species config:', request_info["species"])
                 cfg = self.segment_config[request_info["species"]]
                 default_sr = cfg["sr"]
+                default_sr_native = cfg["sr"]
                 default_min_frequency = cfg["min_frequency"]
                 default_spec_time_step = cfg["spec_time_step"]
                 default_min_segment_length = cfg["min_segment_length"]
@@ -278,6 +273,7 @@ class Segmenter(mp.Process):
                 default_num_trials = cfg["num_trials"]
             else:
                 default_sr = 32000
+                default_sr_native = default_sr
                 default_min_frequency = 0
                 default_spec_time_step = 0.0025
                 default_min_segment_length = 0.01
@@ -290,22 +286,34 @@ class Segmenter(mp.Process):
             min_segment_length = request_info.get( "min_segment_length", default_min_segment_length )
             eps = request_info.get( "eps", default_eps )
             num_trials = request_info.get( "num_trials", default_num_trials )
+            sr_native = request_info.get("sr_native", default_sr_native)
 
             channel_id = request_info.get( "channel_id", 0 )
             adobe_audition_compatible = request_info.get( "adobe_audition_compatible", False )
 
             audioBytes = base64_string_to_bytes(audio_file_base64_string)
-            # print('first 32 bytes:')
-            # print(audioBytes[:16])
             audio = np.frombuffer(audioBytes, dtype='float').astype('float32')
-            # print('Got audio:')
-            # print(audio[:4])
-            # print('shape:', audio.shape)
+
+            if sr != sr_native:
+                print('Resampling audio from {sr1} to {sr2}'.format(sr1=sr_native, sr2=sr))
+                # Resample audio if the native sampling rate is not the same as the model's expected sampling rate
+                audio = librosa.resample(audio, orig_sr=sr_native, target_sr=sr, res_type=res_type)
+
     #        audio, _ = librosa.load( io.BytesIO(base64_string_to_bytes(audio_file_base64_string)),
     #                                 sr = sr, mono=False )
             ### for multiple channel audio, choose the desired channel
             if len(audio.shape) == 2:
                 audio = audio[channel_id]
+
+            print('Segmentation parameters:')
+            print('     audio min=', audio.min(), ' max=', audio.max())
+            print('     sr=', sr)
+            print('     sr_native=', sr_native)
+            print('     min_frequency=', min_frequency)
+            print('     spec_time_step=', spec_time_step)
+            print('     min_segment_length=', min_segment_length)
+            print('     eps=', eps)
+            print('     num_trials=', num_trials)
 
             prediction = self.segmenter.segment(
                 audio,
@@ -314,8 +322,7 @@ class Segmenter(mp.Process):
                 spec_time_step = spec_time_step,
                 min_segment_length = min_segment_length,
                 eps = eps,
-                num_trials = num_trials,
-                batch_size = self.batch_size
+                num_trials = num_trials
                 )
             prediction["message"] = 'Success'
         except:
@@ -400,6 +407,7 @@ def print_models():
 if __name__ == '__main__':
 
     try:
+        # Worker processes can't share GPU resources if they are created with the default 'fork' method - has to be spawn.
         mp.set_start_method('spawn', force=True)
     except:
         print('Unable to set process start method to spawn')
