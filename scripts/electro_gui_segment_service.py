@@ -19,6 +19,8 @@ import io
 import traceback
 import queue
 
+from copy import copy
+
 model_paths = []
 model_names = []
 model_times = []
@@ -238,6 +240,12 @@ class Segmenter(mp.Process):
                 # Got an exit code
                 break
             # Segment the provided audio data, and return it
+            print('SEGMENTING:')
+            print('Model path:', self.model_path)
+            printable_info = copy(request_info)
+            printable_info['audio_file_base64_string'] = '...'
+            print('request_info:')
+            print(printable_info)
             prediction = self.segment(request_info)
             # Send the predicted segmentation and labels through a queue to be
             #   returned to the client
@@ -260,6 +268,7 @@ class Segmenter(mp.Process):
             request_info = { k:v for k,v in request_info.items() if v is not None}
 
             if "species" in request_info and request_info["species"] in self.segment_config:
+                print('Using species config:', request_info["species"])
                 cfg = self.segment_config[request_info["species"]]
                 default_sr = cfg["sr"]
                 default_min_frequency = cfg["min_frequency"]
