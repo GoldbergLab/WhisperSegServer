@@ -6,7 +6,7 @@ from flask import Flask, jsonify, abort, make_response, request, Response
 from flask_cors import CORS
 
 from model import WhisperSegmenter, WhisperSegmenterFast
-#import librosa
+import librosa
 # import pandas as pd
 import numpy as np
 # from tqdm import tqdm
