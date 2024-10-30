@@ -325,6 +325,12 @@ class Segmenter(mp.Process):
                 num_trials = num_trials
                 )
             prediction["message"] = 'Success'
+
+            if sr != sr_native:
+                # Re-scale times to match original timebase before resampling
+                prediction['onset'] *= sr_native / sr
+                prediction['offset'] *= sr_native / sr
+
         except:
             message = "Segmentation Error! Returning an empty prediction ...\n" + traceback.format_exc()
             prediction = make_empty_prediction()
