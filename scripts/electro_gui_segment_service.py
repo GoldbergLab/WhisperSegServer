@@ -297,7 +297,7 @@ class Segmenter(mp.Process):
             if sr != sr_native:
                 print('Resampling audio from {sr1} to {sr2}'.format(sr1=sr_native, sr2=sr))
                 # Resample audio if the native sampling rate is not the same as the model's expected sampling rate
-                audio = librosa.resample(audio, orig_sr=sr_native, target_sr=sr, res_type=res_type)
+                audio = librosa.resample(audio, orig_sr=sr_native, target_sr=sr, res_type="soxr_hq")
 
     #        audio, _ = librosa.load( io.BytesIO(base64_string_to_bytes(audio_file_base64_string)),
     #                                 sr = sr, mono=False )
