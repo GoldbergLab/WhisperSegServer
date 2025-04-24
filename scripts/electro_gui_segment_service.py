@@ -374,7 +374,7 @@ def find_models(model_root_path):
     """
     # Find available networks
     model_root = Path(model_root_path)
-    model_paths = [f.resolve() for f in model_root.iterdir() if f.is_dir() and f.name ~= UNUSED_MODEL_FOLDER]
+    model_paths = [f.resolve() for f in model_root.iterdir() if f.is_dir() and f.name != UNUSED_MODEL_FOLDER]
     model_names = [p.stem for p in model_paths]
     model_times = [str(dt.datetime.fromtimestamp(p.stat().st_mtime)) for p in model_paths]
     return model_paths, model_names, model_times
