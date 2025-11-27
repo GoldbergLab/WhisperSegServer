@@ -12,6 +12,8 @@ import numpy as np
 # from tqdm import tqdm
 from pathlib import Path
 import datetime as dt
+import subprocess as sp
+import socket
 
 import multiprocessing as mp
 import base64
@@ -27,6 +29,9 @@ model_times = []
 workers = {}
 model_root_path = ''
 segment_config = {}
+message_log = []
+max_messages = 500
+worker_stats = {}
 
 # Make Flask application
 app = Flask(__name__)
@@ -45,6 +50,25 @@ def decimal_to_seconds( decimal_time ):
         assert False
 
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+def get_gpu_name():
+    # Get name of GPU
+    command = "nvidia-smi --query-gpu=name --format=csv,noheader"
+    return sp.check_output(command.split()).decode('ascii').strip()
+
+def get_gpu_memory():
+    # Get GPU total and free memory in MiB
+    command = "nvidia-smi --query-gpu=driver_version --format=csv,noheader"
+    return sp.check_output(command.split()).decode('ascii').strip().split(', ')
+
+def get_hostname():
+    return socket.gethostname()
+
+def log_message(message):
+    message_log.append(message)
+    print(message)
+    while len(message_log) > max_messages:
+        message_log.pop(0)
 
 def seconds_to_decimal( seconds ):
     hours = int(seconds // 3600)
@@ -82,6 +106,46 @@ def list_models():
     """
     global model_names, model_times
     response = {'model_names':model_names, 'model_timestamps':model_times}
+    return response
+
+@app.route('/status', methods=['POST'])
+def status_request_handler():
+    """Request handler for update_models.
+
+    Returns:
+        str: Response to query
+
+    """
+    response = get_status()
+    return jsonify(response), 201
+
+def get_status():
+    """Get current server status.
+
+    Returns:
+        dict: Server status message
+
+    """
+    global model_paths, model_names, model_times, workers, model_root_path
+
+    gpu_name = get_gpu_name()
+    total_mem, free_mem = get_gpu_memory()
+    hostname = get_hostname()
+    num_jobs = sum([worker_stats[model_name]['jobs'] for model_name in worker_stats])
+    last_job_timestamp = max([worker_stats[model_name]['last_job_timestamp'] for model_name in worker_stats])
+
+    status = []
+    status.append("Electro_gui WhisperSeg service")
+    status.append("  Running since:   {ts}".format(ts=service_start_timestamp))
+    status.append("  Uptime:          {t}".format(ts=str(datetime.now() - service_start_timestamp)))
+    status.append("  GPU:             {t}".format(ts=str(datetime.now() - service_start_timestamp)))
+    status.append("  # of workers:    {n}".format(n=len(workers)))
+    status.append("  # of jobs:       {n}".format(n=num_jobs))
+    status.append("  last job:        {t}".format(n=str(last_job_timestamp)))
+    status.append("  GPU free memory: {f}/{t}".format(f=free_mem, t=total_mem))
+    status.append("  Serving from:    {h}".format(h=hostname))
+
+    response = '\n'.join(errorMessages)
     return response
 
 @app.route('/update', methods=['POST'])
@@ -159,6 +223,11 @@ def dispatch_segmenter(model_name):
         request_info = request.json
         worker = workers[model_name]
         worker.request_queue.put(request_info, block=True)
+
+        # Update worker stats
+        worker_stats[model_name]["jobs"] += 1
+        worker_stats[model_name]["last_job_timestamp"] = datetime.now()
+
         print('Sent job to worker')
         try:
             prediction = worker.prediction_queue.get(block=True, timeout=100)
@@ -397,6 +466,10 @@ def create_worker(model_name, model_path, device, device_ids, batch_size, segmen
     print('Starting worker for:', model_path)
     worker = Segmenter(model_name, str(model_path), device, device_ids, batch_size, segment_config)
     worker.start()
+
+    # Initialize entry in worker_stats
+    worker_stats[model_name] = {"jobs":0, "last_job_timestamp":None}
+
     return worker
 
 def load_config(config_file_path):
@@ -439,6 +512,8 @@ if __name__ == '__main__':
 
     # Start workers for all the available trained models
     update_models()
+
+    service_start_timestamp = datetime.now()
 
     print("Waiting for requests...")
 
