@@ -150,6 +150,7 @@ def get_status():
     status.append("  Serving from:    {h}".format(h=hostname))
 
     # response = '\n'.join(errorMessages)
+    response = '\n'.join(status)
     return response
 
 @app.route('/update', methods=['POST'])
