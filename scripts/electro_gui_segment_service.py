@@ -141,8 +141,8 @@ def get_status():
     status = []
     status.append("Electro_gui WhisperSeg service")
     status.append("  Running since:   {ts}".format(ts=service_start_timestamp))
-    status.append("  Uptime:          {t}".format(ts=str(datetime.now() - service_start_timestamp)))
-    status.append("  GPU:             {t}".format(ts=str(datetime.now() - service_start_timestamp)))
+    status.append("  Uptime:          {t}".format(t=str(datetime.now() - service_start_timestamp)))
+    status.append("  GPU:             {t}".format(t=str(datetime.now() - service_start_timestamp)))
     status.append("  # of workers:    {n}".format(n=len(workers)))
     status.append("  # of jobs:       {n}".format(n=num_jobs))
     status.append("  Last job:        {t}".format(t=str(last_job_timestamp)))
