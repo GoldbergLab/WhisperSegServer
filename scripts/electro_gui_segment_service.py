@@ -132,7 +132,11 @@ def get_status():
     total_mem, free_mem = get_gpu_memory()
     hostname = get_hostname()
     num_jobs = sum([worker_stats[model_name]['jobs'] for model_name in worker_stats])
-    last_job_timestamp = max([worker_stats[model_name]['last_job_timestamp'] for model_name in worker_stats])
+    timestamps = [worker_stats[model_name]['last_job_timestamp'] for model_name in worker_stats if worker_stats[model_name]['last_job_timestamp'] is not None]
+    if len(timestamps) > 0:
+        last_job_timestamp = max(timestamps)
+    else:
+        last_job_timestamp = None
 
     status = []
     status.append("Electro_gui WhisperSeg service")
@@ -141,7 +145,7 @@ def get_status():
     status.append("  GPU:             {t}".format(ts=str(datetime.now() - service_start_timestamp)))
     status.append("  # of workers:    {n}".format(n=len(workers)))
     status.append("  # of jobs:       {n}".format(n=num_jobs))
-    status.append("  last job:        {t}".format(n=str(last_job_timestamp)))
+    status.append("  Last job:        {t}".format(n=str(last_job_timestamp)))
     status.append("  GPU free memory: {f}/{t}".format(f=free_mem, t=total_mem))
     status.append("  Serving from:    {h}".format(h=hostname))
 
