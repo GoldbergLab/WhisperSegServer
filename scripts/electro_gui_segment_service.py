@@ -149,7 +149,7 @@ def get_status():
     status.append("  GPU free memory: {f}/{t}".format(f=free_mem, t=total_mem))
     status.append("  Serving from:    {h}".format(h=hostname))
 
-    response = '\n'.join(errorMessages)
+    # response = '\n'.join(errorMessages)
     return response
 
 @app.route('/update', methods=['POST'])
