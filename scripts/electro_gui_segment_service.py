@@ -145,7 +145,7 @@ def get_status():
     status.append("  GPU:             {t}".format(ts=str(datetime.now() - service_start_timestamp)))
     status.append("  # of workers:    {n}".format(n=len(workers)))
     status.append("  # of jobs:       {n}".format(n=num_jobs))
-    status.append("  Last job:        {t}".format(n=str(last_job_timestamp)))
+    status.append("  Last job:        {t}".format(t=str(last_job_timestamp)))
     status.append("  GPU free memory: {f}/{t}".format(f=free_mem, t=total_mem))
     status.append("  Serving from:    {h}".format(h=hostname))
 
