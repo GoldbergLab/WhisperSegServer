@@ -59,7 +59,7 @@ def get_gpu_name():
 def get_gpu_memory():
     # Get GPU total and free memory in MiB
     command = "nvidia-smi --query-gpu=memory.total,memory.free --format=csv,noheader"
-    return *sp.check_output(command.split()).decode('ascii').strip().split(', ')
+    return sp.check_output(command.split()).decode('ascii').strip().split(', ')
 
 def get_hostname():
     return socket.gethostname()
